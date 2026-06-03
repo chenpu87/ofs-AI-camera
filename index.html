@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>BikeFit Cam · 即時側拍監看</title>
+<!-- PeerJS：封裝好的 WebRTC，負責點對點連線與訊號交換 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0a0c0f;
+    --panel:#13171c;
+    --line:#222a32;
+    --ink:#eef2f5;
+    --muted:#7d8a96;
+    --accent:#c8ff3d;       /* 高可視度螢光綠 */
+    --accent-ink:#0a0c0f;
+    --danger:#ff5c5c;
+    --radius:16px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
+    font-family:"Archivo",system-ui,sans-serif;overscroll-behavior:none}
+  body{overflow:hidden}
+  .mono{font-family:"JetBrains Mono",monospace}
+
+  /* ---------- 畫面切換 ---------- */
+  .screen{position:fixed;inset:0;display:none;flex-direction:column}
+  .screen.active{display:flex}
+
+  /* ---------- 首頁 ---------- */
+  #home{align-items:center;justify-content:center;padding:28px;text-align:center;
+    background:
+      radial-gradient(900px 500px at 50% -10%, rgba(200,255,61,.10), transparent 60%),
+      var(--bg)}
+  #home .logo{font-weight:900;font-size:13px;letter-spacing:.32em;color:var(--accent);margin-bottom:18px}
+  #home h1{font-weight:900;font-size:clamp(30px,8vw,52px);line-height:1.02;margin:0 0 14px}
+  #home p{color:var(--muted);max-width:380px;margin:0 0 38px;line-height:1.6;font-size:15px}
+  .choose{display:flex;flex-direction:column;gap:14px;width:100%;max-width:360px}
+  .role{display:flex;align-items:center;gap:16px;text-align:left;padding:20px;border:1px solid var(--line);
+    border-radius:var(--radius);background:var(--panel);color:var(--ink);cursor:pointer;
+    transition:.18s border-color,.18s transform}
+  .role:active{transform:scale(.985)}
+  .role:hover{border-color:var(--accent)}
+  .role .ic{flex:0 0 52px;height:52px;border-radius:13px;display:grid;place-items:center;
+    background:rgba(200,255,61,.10);color:var(--accent);font-size:26px}
+  .role .t{font-weight:700;font-size:18px}
+  .role .s{color:var(--muted);font-size:13px;margin-top:2px}
+
+  /* ---------- 通用按鈕 ---------- */
+  .btn{border:none;border-radius:12px;font-family:inherit;font-weight:700;font-size:15px;
+    padding:13px 18px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+  .btn.primary{background:var(--accent);color:var(--accent-ink)}
+  .btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+  .btn.danger{background:rgba(255,92,92,.12);color:var(--danger);border:1px solid rgba(255,92,92,.3)}
+  .btn:active{transform:scale(.97)}
+
+  /* ---------- 相機端 ---------- */
+  #camera{background:#000}
+  #camPreview{flex:1;width:100%;object-fit:cover;background:#000}
+  .cam-bar{position:absolute;left:0;right:0;bottom:0;padding:20px;padding-bottom:max(20px,env(safe-area-inset-bottom));
+    background:linear-gradient(transparent,rgba(0,0,0,.85));display:flex;flex-direction:column;gap:14px;align-items:center}
+  .codecard{background:rgba(19,23,28,.85);backdrop-filter:blur(8px);border:1px solid var(--line);
+    border-radius:var(--radius);padding:16px 22px;text-align:center;min-width:240px}
+  .codecard .lbl{color:var(--muted);font-size:12px;letter-spacing:.18em;font-weight:700;text-transform:uppercase}
+  .codecard .code{font-size:46px;font-weight:700;letter-spacing:.18em;color:var(--accent);margin-top:4px}
+  .cam-status{color:var(--ink);font-size:13px;display:flex;align-items:center;gap:8px}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--muted)}
+  .dot.live{background:var(--accent);box-shadow:0 0 0 0 rgba(200,255,61,.6);animation:pulse 1.6s infinite}
+  @keyframes pulse{70%{box-shadow:0 0 0 9px rgba(200,255,61,0)}100%{box-shadow:0 0 0 0 rgba(200,255,61,0)}}
+  .cam-actions{display:flex;gap:10px}
+
+  /* ---------- 監看端 ---------- */
+  #monitor{background:#000}
+  .mon-stage{position:absolute;inset:0;overflow:hidden;background:#000}
+  #monVideo,#freezeCanvas{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;
+    transform-origin:center center}
+  #freezeCanvas{display:none}
+  .mirror{transform:scaleX(-1)}
+
+  /* 連線輸入面板 */
+  .join{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:18px;padding:28px;text-align:center;background:var(--bg)}
+  .join h2{margin:0;font-weight:900;font-size:24px}
+  .join p{color:var(--muted);margin:0;font-size:14px;max-width:300px;line-height:1.6}
+  .code-input{font-family:"JetBrains Mono",monospace;font-size:40px;font-weight:700;letter-spacing:.3em;
+    text-align:center;width:230px;padding:14px;border-radius:14px;border:1px solid var(--line);
+    background:var(--panel);color:var(--accent);outline:none}
+  .code-input:focus{border-color:var(--accent)}
+  .join-msg{font-size:13px;min-height:18px;color:var(--muted)}
+  .join-msg.err{color:var(--danger)}
+
+  /* 監看工具列 */
+  .toolbar{position:absolute;left:0;right:0;bottom:0;z-index:30;
+    padding:12px;padding-bottom:max(12px,env(safe-area-inset-bottom));
+    display:flex;gap:8px;justify-content:center;flex-wrap:wrap;
+    background:linear-gradient(transparent,rgba(0,0,0,.78))}
+  .tool{display:flex;flex-direction:column;align-items:center;gap:3px;min-width:60px;
+    padding:9px 6px;border:1px solid var(--line);border-radius:12px;background:rgba(19,23,28,.7);
+    backdrop-filter:blur(6px);color:var(--ink);font-size:11px;font-weight:700;cursor:pointer}
+  .tool .ic{font-size:19px}
+  .tool.on{border-color:var(--accent);background:rgba(200,255,61,.14);color:var(--accent)}
+  .mon-status{position:absolute;top:0;left:0;right:0;z-index:30;padding:14px;
+    padding-top:max(14px,env(safe-area-inset-top));display:flex;align-items:center;gap:8px;
+    background:linear-gradient(rgba(0,0,0,.6),transparent);font-size:12px;font-weight:700;color:var(--ink)}
+  .freeze-tag{position:absolute;top:54px;left:14px;z-index:30;background:var(--accent);color:var(--accent-ink);
+    font-weight:700;font-size:11px;letter-spacing:.1em;padding:5px 10px;border-radius:8px;display:none}
+
+  /* 格線 / 角度量測 SVG */
+  #overlay{position:absolute;inset:0;z-index:20;width:100%;height:100%;pointer-events:none}
+  #grid line{stroke:rgba(255,255,255,.28);stroke-width:1}
+  #grid line.mid{stroke:rgba(200,255,61,.55);stroke-width:1.4}
+  #angleTool{pointer-events:none}
+  #angleTool.active{pointer-events:auto}
+  #angleTool .leg{stroke:var(--accent);stroke-width:3;stroke-linecap:round}
+  #angleTool .handle{fill:#000;stroke:var(--accent);stroke-width:3;cursor:grab}
+  #angleTool .handle.vertex{fill:var(--accent)}
+  #angleTool .deg-bg{fill:rgba(0,0,0,.7)}
+  #angleTool .deg{fill:var(--accent);font:700 22px "JetBrains Mono",monospace}
+  .hidden{display:none!important}
+</style>
+</head>
+<body>
+
+<!-- ============ 首頁 ============ -->
+<section id="home" class="screen active">
+  <div class="logo">● BIKEFIT CAM</div>
+  <h1>側拍即時<br>投到平板</h1>
+  <p>手機在側邊拍攝、平板放在車主前方即時監看。跨品牌（iPhone／Android）都能用，只要連同一個 Wi-Fi 開這個網頁。</p>
+  <div class="choose">
+    <button class="role" onclick="goCamera()">
+      <div class="ic">📷</div>
+      <div><div class="t">這是相機（手機）</div><div class="s">放在側邊拍攝車主</div></div>
+    </button>
+    <button class="role" onclick="goMonitor()">
+      <div class="ic">🖥️</div>
+      <div><div class="t">這是監看（平板）</div><div class="s">放在前方給車主看</div></div>
+    </button>
+  </div>
+</section>
+
+<!-- ============ 相機端 ============ -->
+<section id="camera" class="screen">
+  <video id="camPreview" autoplay muted playsinline webkit-playsinline></video>
+  <div class="cam-bar">
+    <div class="codecard">
+      <div class="lbl">配對代碼</div>
+      <div class="code mono" id="camCode">····</div>
+    </div>
+    <div class="cam-status"><span class="dot" id="camDot"></span><span id="camStatus">啟動相機中…</span></div>
+    <div class="cam-actions">
+      <button class="btn ghost" onclick="flipCamera()">🔄 切換鏡頭</button>
+      <button class="btn danger" onclick="location.reload()">結束</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 監看端 ============ -->
+<section id="monitor" class="screen">
+  <div class="mon-stage" id="stage">
+    <video id="monVideo" autoplay muted playsinline webkit-playsinline></video>
+    <canvas id="freezeCanvas"></canvas>
+
+    <!-- 格線 + 角度量測 -->
+    <svg id="overlay" preserveAspectRatio="none">
+      <g id="grid" class="hidden"></g>
+      <g id="angleTool"></g>
+    </svg>
+
+    <div class="mon-status"><span class="dot" id="monDot"></span><span id="monStatus">等待輸入代碼</span></div>
+    <div class="freeze-tag" id="freezeTag">⏸ 定格中</div>
+
+    <!-- 連線輸入面板 -->
+    <div class="join" id="join">
+      <h2>輸入相機代碼</h2>
+      <p>請看手機畫面上的 4 位數代碼，輸入後即可看到前方影像。</p>
+      <input class="code-input mono" id="codeInput" inputmode="numeric" maxlength="4" placeholder="0000">
+      <button class="btn primary" id="joinBtn" onclick="connectCamera()">連線</button>
+      <div class="join-msg" id="joinMsg"></div>
+    </div>
+
+    <!-- 工具列 -->
+    <div class="toolbar hidden" id="toolbar">
+      <div class="tool" id="tGrid" onclick="toggleGrid()"><span class="ic">▦</span>格線</div>
+      <div class="tool" id="tAngle" onclick="toggleAngle()"><span class="ic">∠</span>量角度</div>
+      <div class="tool" id="tFreeze" onclick="toggleFreeze()"><span class="ic">⏸</span>定格</div>
+      <div class="tool" id="tMirror" onclick="toggleMirror()"><span class="ic">⇋</span>鏡像</div>
+      <div class="tool" id="tRotate" onclick="rotateView()"><span class="ic">⟳</span>旋轉</div>
+      <div class="tool" onclick="toggleFull()"><span class="ic">⛶</span>全螢幕</div>
+    </div>
+  </div>
+</section>
+
+<script>
+/* ============================================================
+   BikeFit Cam — 單檔 WebRTC 相機分享
+   架構：相機端用固定代碼註冊為一個 Peer；監看端輸入代碼後
+   發出 data 連線，相機端收到後「主動撥打」並送出影像串流。
+   （此法相容性最好，避免空串流問題）
+   ============================================================ */
+
+const $ = id => document.getElementById(id);
+const show = id => { document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active')); $(id).classList.add('active'); };
+
+let peer = null;
+let localStream = null;
+let currentFacing = 'environment'; // 預設後鏡頭（拍車主）
+
+/* ---------- 相機端 ---------- */
+async function goCamera(){
+  show('camera');
+  const code = String(Math.floor(1000 + Math.random()*9000)); // 4 位數
+  await startLocalCamera();
+  startCameraPeer(code);
+}
+
+async function startLocalCamera(){
+  if(localStream){ localStream.getTracks().forEach(t=>t.stop()); }
+  try{
+    localStream = await navigator.mediaDevices.getUserMedia({
+      video:{ facingMode:{ ideal: currentFacing }, width:{ideal:1280}, height:{ideal:720} },
+      audio:false
+    });
+    $('camPreview').srcObject = localStream;
+  }catch(e){
+    $('camStatus').textContent = '無法取用相機：' + (e.name||e.message) + '（需在 HTTPS 或 localhost 開啟，並允許相機權限）';
+  }
+}
+
+function startCameraPeer(code){
+  $('camCode').textContent = code;
+  $('camStatus').textContent = '連線伺服器中…';
+  peer = new Peer('bikefitcam' + code);
+
+  peer.on('open', () => { $('camStatus').textContent = '已就緒，等待平板連線'; });
+
+  // 監看端發來 data 連線 → 主動撥打並送出影像
+  peer.on('connection', conn => {
+    conn.on('open', () => {
+      if(localStream){
+        peer.call(conn.peer, localStream);
+        $('camDot').classList.add('live');
+        $('camStatus').textContent = '平板已連線 · 影像傳送中';
+      }
+    });
+    conn.on('close', () => {
+      $('camDot').classList.remove('live');
+      $('camStatus').textContent = '平板已離線，等待重新連線';
+    });
+  });
+
+  peer.on('error', err => {
+    if(err.type === 'unavailable-id'){
+      // 代碼撞號，換一個重來
+      goCamera();
+    }else{
+      $('camStatus').textContent = '連線錯誤：' + err.type;
+    }
+  });
+}
+
+async function flipCamera(){
+  currentFacing = currentFacing === 'environment' ? 'user' : 'environment';
+  await startLocalCamera();
+  // 換鏡頭後，把新的 video track 替換給已連線的對方
+  if(peer){
+    Object.values(peer.connections).flat().forEach(c=>{
+      if(c.peerConnection){
+        const sender = c.peerConnection.getSenders().find(s=>s.track && s.track.kind==='video');
+        if(sender && localStream) sender.replaceTrack(localStream.getVideoTracks()[0]);
+      }
+    });
+  }
+}
+
+/* ---------- 監看端 ---------- */
+function goMonitor(){
+  show('monitor');
+  setTimeout(()=>$('codeInput').focus(), 200);
+}
+
+function connectCamera(){
+  const code = $('codeInput').value.trim();
+  if(!/^\d{4}$/.test(code)){ joinMsg('請輸入 4 位數字', true); return; }
+  joinMsg('連線中…');
+  $('joinBtn').disabled = true;
+
+  peer = new Peer();
+  peer.on('open', () => {
+    const conn = peer.connect('bikefitcam' + code);
+    let answered = false;
+
+    conn.on('open', () => joinMsg('已連到相機，等待影像…'));
+    conn.on('error', () => { joinMsg('連線失敗，請確認代碼', true); $('joinBtn').disabled=false; });
+
+    // 相機端撥打進來 → 接聽（只收不送）並顯示
+    peer.on('call', call => {
+      call.answer(); // 監看端不送影像
+      call.on('stream', remote => {
+        answered = true;
+        $('monVideo').srcObject = remote;
+        $('join').classList.add('hidden');
+        $('toolbar').classList.remove('hidden');
+        $('monDot').classList.add('live');
+        $('monStatus').textContent = '即時連線中';
+        buildGrid();
+        initAngleTool();
+      });
+    });
+
+    // 5 秒沒接到影像就提示
+    setTimeout(()=>{ if(!answered){ joinMsg('找不到相機，請確認代碼與是否在同一網路', true); $('joinBtn').disabled=false; } }, 5000);
+  });
+
+  peer.on('error', err => {
+    if(err.type === 'peer-unavailable') joinMsg('找不到這台相機，請確認代碼', true);
+    else joinMsg('錯誤：' + err.type, true);
+    $('joinBtn').disabled = false;
+  });
+}
+function joinMsg(t, isErr){ const m=$('joinMsg'); m.textContent=t; m.classList.toggle('err', !!isErr); }
+
+/* ---------- 監看工具：鏡像 / 旋轉 / 全螢幕 ---------- */
+let mirrored=false, rotation=0;
+function applyTransform(){
+  const t = `rotate(${rotation}deg) ${mirrored?'scaleX(-1)':''}`;
+  $('monVideo').style.transform = t;
+  $('freezeCanvas').style.transform = t;
+}
+function toggleMirror(){ mirrored=!mirrored; $('tMirror').classList.toggle('on',mirrored); applyTransform(); }
+function rotateView(){ rotation=(rotation+90)%360; $('tRotate').classList.toggle('on',rotation!==0); applyTransform(); }
+function toggleFull(){ if(!document.fullscreenElement) document.documentElement.requestFullscreen?.(); else document.exitFullscreen?.(); }
+
+/* ---------- 格線 ---------- */
+let gridOn=false;
+function buildGrid(){
+  const g=$('grid'); const w=stage.clientWidth, h=stage.clientHeight;
+  $('overlay').setAttribute('viewBox',`0 0 ${w} ${h}`);
+  g.innerHTML='';
+  [1,2].forEach(i=>{ // 三等分縱線
+    const x=w*i/3; g.innerHTML+=`<line x1="${x}" y1="0" x2="${x}" y2="${h}"/>`;
+    const y=h*i/3; g.innerHTML+=`<line x1="0" y1="${y}" x2="${w}" y2="${y}"/>`;
+  });
+  g.innerHTML+=`<line class="mid" x1="${w/2}" y1="0" x2="${w/2}" y2="${h}"/>`; // 中央鉛垂線
+}
+function toggleGrid(){ gridOn=!gridOn; $('grid').classList.toggle('hidden',!gridOn); $('tGrid').classList.toggle('on',gridOn); }
+
+/* ---------- 定格（捕捉當前畫面比對姿勢） ---------- */
+let frozen=false;
+function toggleFreeze(){
+  const v=$('monVideo'), c=$('freezeCanvas');
+  if(!frozen){
+    c.width=v.videoWidth||stage.clientWidth; c.height=v.videoHeight||stage.clientHeight;
+    c.getContext('2d').drawImage(v,0,0,c.width,c.height);
+    c.style.display='block'; $('freezeTag').style.display='block'; frozen=true;
+  }else{
+    c.style.display='none'; $('freezeTag').style.display='none'; frozen=false;
+  }
+  $('tFreeze').classList.toggle('on',frozen);
+}
+
+/* ---------- 角度量測工具（量膝/髖關節角度） ---------- */
+let angleOn=false;
+let pts={ a:{x:0,y:0}, v:{x:0,y:0}, b:{x:0,y:0} };
+let dragging=null;
+const NS='http://www.w3.org/2000/svg';
+
+function initAngleTool(){
+  const w=stage.clientWidth, h=stage.clientHeight;
+  pts.a={x:w*0.35,y:h*0.35}; pts.v={x:w*0.5,y:h*0.5}; pts.b={x:w*0.65,y:h*0.35};
+  drawAngle();
+}
+function toggleAngle(){
+  angleOn=!angleOn;
+  $('angleTool').classList.toggle('active',angleOn);
+  $('angleTool').style.display=angleOn?'block':'none';
+  $('tAngle').classList.toggle('on',angleOn);
+  if(angleOn) drawAngle();
+}
+function calcDeg(){
+  const v1={x:pts.a.x-pts.v.x,y:pts.a.y-pts.v.y};
+  const v2={x:pts.b.x-pts.v.x,y:pts.b.y-pts.v.y};
+  let ang=Math.atan2(v2.y,v2.x)-Math.atan2(v1.y,v1.x);
+  let deg=Math.abs(ang*180/Math.PI); if(deg>180) deg=360-deg;
+  return Math.round(deg);
+}
+function drawAngle(){
+  const g=$('angleTool'); const deg=calcDeg();
+  g.innerHTML=`
+    <line class="leg" x1="${pts.a.x}" y1="${pts.a.y}" x2="${pts.v.x}" y2="${pts.v.y}"/>
+    <line class="leg" x1="${pts.b.x}" y1="${pts.b.y}" x2="${pts.v.x}" y2="${pts.v.y}"/>
+    <circle class="handle" data-p="a" cx="${pts.a.x}" cy="${pts.a.y}" r="13"/>
+    <circle class="handle" data-p="b" cx="${pts.b.x}" cy="${pts.b.y}" r="13"/>
+    <circle class="handle vertex" data-p="v" cx="${pts.v.x}" cy="${pts.v.y}" r="13"/>
+    <rect class="deg-bg" x="${pts.v.x+16}" y="${pts.v.y-34}" width="74" height="32" rx="8"/>
+    <text class="deg" x="${pts.v.x+24}" y="${pts.v.y-11}">${deg}°</text>`;
+  g.querySelectorAll('.handle').forEach(el=>el.addEventListener('pointerdown',startDrag));
+}
+function startDrag(e){ dragging=e.target.dataset.p; e.target.setPointerCapture(e.pointerId); e.preventDefault(); }
+function moveDrag(e){
+  if(!dragging) return;
+  const r=$('overlay').getBoundingClientRect();
+  const sx=stage.clientWidth/r.width, sy=stage.clientHeight/r.height;
+  pts[dragging]={ x:(e.clientX-r.left)*sx, y:(e.clientY-r.top)*sy };
+  drawAngle();
+}
+document.addEventListener('pointermove',moveDrag);
+document.addEventListener('pointerup',()=>dragging=null);
+
+window.addEventListener('resize',()=>{ if(gridOn)buildGrid(); if(angleOn)drawAngle(); });
+</script>
+</body>
+</html>

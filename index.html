@@ -41,10 +41,10 @@
   .iconbtn{background:rgba(19,23,28,.7);border:1px solid var(--line);color:var(--ink);border-radius:10px;width:38px;height:38px;font-size:17px;cursor:pointer}
   .freeze-tag{position:absolute;top:60px;right:14px;z-index:31;background:var(--blue);color:#fff;font-weight:700;font-size:11px;letter-spacing:.1em;padding:5px 10px;border-radius:8px;display:none}
 
-  .readout{position:absolute;top:60px;left:12px;z-index:31;background:rgba(10,12,15,.8);backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:14px;padding:10px 12px;min-width:206px}
+  .readout{position:absolute;top:60px;left:12px;z-index:31;background:rgba(10,12,15,.8);backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:14px;padding:10px 12px;min-width:206px;pointer-events:none}
   .readout.hidden{display:none}
   .ro-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px} #roSide{font-weight:900;font-size:13px;color:var(--blue)}
-  .ro-btns button{font-family:inherit;font-weight:700;font-size:11px;border:1px solid var(--line);background:transparent;color:var(--ink);border-radius:8px;padding:4px 8px;margin-left:4px;cursor:pointer}
+  .ro-btns button{font-family:inherit;font-weight:700;font-size:11px;border:1px solid var(--line);background:transparent;color:var(--ink);border-radius:8px;padding:4px 8px;margin-left:4px;cursor:pointer;pointer-events:auto}
   .ro-row{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:3px 0;font-size:13px}
   .ro-row .nm b{color:var(--ink);font-weight:700} .ro-row .nm i{font-style:normal;color:var(--muted);font-size:11px;margin-left:4px}
   .ro-row .val{font-family:"JetBrains Mono",monospace;font-weight:700;font-size:16px;color:var(--blue)} .ro-row .ext{font-family:"JetBrains Mono",monospace;font-size:10px;color:var(--muted)}
@@ -70,7 +70,7 @@
   .cmp-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px} .cmp-head b{font-size:16px}
   .cmp-tab{font-family:inherit;font-weight:700;font-size:13px;border:1px solid var(--line);background:transparent;color:var(--ink);border-radius:9px;padding:7px 12px;margin-left:6px;cursor:pointer} .cmp-tab.on{border-color:var(--blue);background:var(--blue);color:#fff}
   .cmp-close{margin-left:10px;background:transparent;border:none;color:var(--ink);font-size:20px;cursor:pointer}
-  .cmp-body{flex:1;display:flex;gap:12px;min-height:0} .cmp-col{flex:1;display:flex;flex-direction:column;gap:8px;min-width:0}
+  .cmp-body{flex:1;display:flex;gap:12px;min-height:0;overflow:hidden} .cmp-col{flex:1;display:flex;flex-direction:column;gap:8px;min-width:0;min-height:0}
   .cmp-lbl{align-self:flex-start;background:var(--blue);color:#fff;font-weight:800;font-size:12px;letter-spacing:.1em;padding:4px 10px;border-radius:8px}
   .cmp-slot{flex:1;border:1px solid var(--line);border-radius:14px;background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
   .cmp-slot img,.cmp-slot video{max-width:100%;max-height:100%;object-fit:contain} .cmp-empty{color:var(--muted);font-size:13px}
@@ -114,7 +114,7 @@
       <div id="roList"></div>
     </div>
 
-    <div class="adjust-hint" id="adjustHint">拖曳藍點校正關節 <button onclick="resetOverrides()">重設</button></div>
+    <div class="adjust-hint" id="adjustHint">已定格 · 拖曳藍點校正關節 <button onclick="resetOverrides()">重設</button></div>
 
     <div class="bottombar">
       <div class="capbar">
@@ -149,7 +149,8 @@
         <div class="cmp-col"><span class="cmp-lbl">PRE-FIT</span><div class="cmp-slot" id="cmpPre"></div></div>
         <div class="cmp-col"><span class="cmp-lbl">POST-FIT</span><div class="cmp-slot" id="cmpPost"></div></div>
       </div>
-      <div class="cmp-foot"><button class="btn ghost" id="cmpSync" onclick="syncPlay()" style="display:none">▶ 同步播放</button></div>
+      <div class="cmp-foot"><button class="btn ghost" id="cmpSync" onclick="syncPlay()" style="display:none">▶ 同步播放</button>
+        <button class="btn" style="background:#ff7a1a;color:#fff" onclick="sendToOFS()">📤 傳送到 OFS</button></div>
     </div>
   </div>
 </section>
@@ -213,7 +214,7 @@ function ensureOut(){ if(!outStream){ try{ outStream=fitCanvas.captureStream(30)
 async function ensurePose(){ if(poseLandmarker)return true; setFit('載入 AI 模型中…（首次約 5 秒）');
   try{ const vision=await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14'); const {PoseLandmarker,FilesetResolver}=vision;
     const fileset=await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm');
-    const opts=det=>({baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',delegate:det},runningMode:'VIDEO',numPoses:1});
+    const opts=det=>({baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task',delegate:det},runningMode:'VIDEO',numPoses:1});
     try{ poseLandmarker=await PoseLandmarker.createFromOptions(fileset,opts('GPU')); }catch(e){ poseLandmarker=await PoseLandmarker.createFromOptions(fileset,opts('CPU')); }
     setFit('AI 追蹤中'); return true; }catch(err){ setFit('AI 模型載入失敗（仍可串流影像）'); return false; } }
 function toggleAuto(){ aiOn=!aiOn; $('tAuto').classList.toggle('on',aiOn); $('readout').classList.toggle('hidden',!aiOn);
@@ -222,7 +223,7 @@ function toggleAuto(){ aiOn=!aiOn; $('tAuto').classList.toggle('on',aiOn); $('re
 function chooseSide(lm){ if(sideMode!=='auto')return sideMode; const sum=s=>['shoulder','hip','knee','ankle'].reduce((a,k)=>a+(lm[SIDES[s][k]]?.visibility||0),0); return sum('left')>=sum('right')?'left':'right'; }
 function angAt(a,b,c){ const v1={x:a.x-b.x,y:a.y-b.y},v2={x:c.x-b.x,y:c.y-b.y}; let d=Math.abs((Math.atan2(v2.y,v2.x)-Math.atan2(v1.y,v1.x))*180/Math.PI); if(d>180)d=360-d; return Math.round(d); }
 function computeP(vw,vh){ const idx=SIDES[curSide],P={}; for(const k in idx){ let nx,ny,vv;
-    if(overrides[k]){ nx=overrides[k].x; ny=overrides[k].y; vv=1; } else { const p=lastLM[idx[k]]; nx=p.x; ny=p.y; vv=p.visibility??1; }
+    if(frozen && overrides[k]){ nx=overrides[k].x; ny=overrides[k].y; vv=1; } else { const p=lastLM[idx[k]]; nx=p.x; ny=p.y; vv=p.visibility??1; }
     P[k]={x:(mirrored?1-nx:nx)*vw, y:ny*vh, v:vv}; } return P; }
 function anglesOf(P){ const out={}; for(const key in ANGLE_DEFS){ const d=ANGLE_DEFS[key],ps=d.pts.map(n=>P[n]); out[key]=ps.some(p=>p.v<.25)?null:angAt(ps[0],ps[1],ps[2]); } return out; }
 
@@ -266,11 +267,14 @@ function resetStats(){ stats={}; }
 function toggleMirror(){ mirrored=!mirrored; $('tMirror').classList.toggle('on',mirrored); }
 function toggleGrid(){ gridOn=!gridOn; $('tGrid').classList.toggle('on',gridOn); }
 function toggleFreeze(){ if(!frozen){ const v=camVideo,vw=v.videoWidth,vh=v.videoHeight; freezeImg=document.createElement('canvas'); freezeImg.width=vw;freezeImg.height=vh;
-    freezeImg.getContext('2d').drawImage(v,0,0,vw,vh); frozen=true; } else { frozen=false; freezeImg=null; } $('tFreeze').classList.toggle('on',frozen); $('freezeTag').style.display=frozen?'block':'none'; }
+    freezeImg.getContext('2d').drawImage(v,0,0,vw,vh); frozen=true; }
+  else { frozen=false; freezeImg=null; overrides={}; if(adjustMode){ adjustMode=false; $('tAdjust').classList.remove('on'); fitCanvas.style.pointerEvents='none'; $('adjustHint').style.display='none'; } }
+  $('tFreeze').classList.toggle('on',frozen); $('freezeTag').style.display=frozen?'block':'none'; }
 
-/* 校正：拖曳關節 */
+/* 校正：拖曳關節（只在定格時可校正；開啟校正會自動定格） */
 function toggleAdjust(){ adjustMode=!adjustMode; $('tAdjust').classList.toggle('on',adjustMode);
-  fitCanvas.style.pointerEvents=adjustMode?'auto':'none'; $('adjustHint').style.display=adjustMode?'inline-flex':'none'; }
+  fitCanvas.style.pointerEvents=adjustMode?'auto':'none'; $('adjustHint').style.display=adjustMode?'inline-flex':'none';
+  if(adjustMode && !frozen) toggleFreeze(); }
 function resetOverrides(){ overrides={}; toast('已重設為自動偵測'); }
 let dragKey=null;
 function ptToCanvas(cx,cy){ const r=fitCanvas.getBoundingClientRect(),cw=fitCanvas.width,ch=fitCanvas.height,sc=Math.min(r.width/cw,r.height/ch);
@@ -286,12 +290,13 @@ function bindAdjust(){
 function setOverride(e){ const {nx,ny}=ptToCanvas(e.clientX,e.clientY); overrides[dragKey]={x:nx,y:ny}; }
 
 /* PRE / POST 擷取 */
-const store={ pre:{photo:null,video:null,ext:'webm',angles:null}, post:{photo:null,video:null,ext:'webm',angles:null} };
+const store={ pre:{photo:null,video:null,ext:'webm',angles:null,jpeg:null}, post:{photo:null,video:null,ext:'webm',angles:null,jpeg:null} };
 function setMode(m){ captureMode=(captureMode===m?null:m); $('preBtn').classList.toggle('on',captureMode==='pre'); $('postBtn').classList.toggle('on',captureMode==='post'); }
 function download(url,name){ const a=document.createElement('a'); a.href=url; a.download=name; document.body.appendChild(a); a.click(); a.remove(); }
 function toast(t){ const el=$('toast'); el.textContent=t; el.classList.add('show'); clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),1800); }
 function flashShutter(){ const s=$('shutter'); s.classList.remove('flash'); void s.offsetWidth; s.classList.add('flash'); }
 function capturePhoto(){ if(!captureMode){ toast('請先選 PRE 或 POST 模式'); return; } if(!fitCanvas.width){ toast('尚未有影像'); return; }
+  store[captureMode].jpeg=fitCanvas.toDataURL('image/jpeg',0.85);
   fitCanvas.toBlob(blob=>{ const url=URL.createObjectURL(blob); store[captureMode].photo=url; store[captureMode].angles=lastAngles?{...lastAngles}:store[captureMode].angles; flashShutter(); download(url,captureMode+'-fit-'+Date.now()+'.png'); toast(bannerText()+' 照片已存'); },'image/png'); }
 let recorder=null,recChunks=[],recording=false;
 function pickMime(){ const c=['video/mp4;codecs=h264','video/mp4','video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm']; for(const m of c){ try{ if(MediaRecorder.isTypeSupported(m))return m; }catch(e){} } return ''; }
@@ -318,6 +323,23 @@ function fillSlot(id,key){ const el=$(id),data=store[key][cmpMode],lbl=key==='pr
   if(!data){ el.innerHTML='<div class="cmp-empty">尚未擷取</div>'; return; }
   el.innerHTML=cmpMode==='photo'?`<img src="${data}"><a class="cmp-dl" href="${data}" download="${lbl}.png">下載</a>`:`<video src="${data}" playsinline controls loop></video><a class="cmp-dl" href="${data}" download="${lbl}.${store[key].ext}">下載</a>`; }
 function syncPlay(){ $('compare').querySelectorAll('video').forEach(v=>{ try{ v.currentTime=0; v.play(); }catch(e){} }); }
+
+/* ===== 傳送到 OFS ===== */
+function buildOfsPayload(){ const a=store.pre.angles||{}, b=store.post.angles||{};
+  return { type:'OFS_FIT_PAYLOAD', version:1, app:'BikeFitCam', createdAt:new Date().toISOString(),
+    side:(curSide==='left'?'left':'right'), angleKeys:ORDER,
+    angleNames:Object.fromEntries(ORDER.map(k=>[k,{en:ANGLE_DEFS[k].label,zh:ZH[k],tri:ANGLE_DEFS[k].tri}])),
+    pre:{ angles:store.pre.angles||null, photo:store.pre.jpeg||null },
+    post:{ angles:store.post.angles||null, photo:store.post.jpeg||null },
+    diff:Object.fromEntries(ORDER.map(k=>{ const pv=a[k],qv=b[k]; return [k,(pv!=null&&qv!=null)?qv-pv:null]; })) }; }
+function sendToOFS(){ const p=buildOfsPayload();
+  if(!p.pre.photo && !p.post.photo && !p.pre.angles && !p.post.angles){ toast('尚無 PRE/POST 資料'); return; }
+  let sent=false;
+  try{ if(window.opener){ window.opener.postMessage(p,'*'); sent=true; } }catch(e){}
+  try{ if(window.parent && window.parent!==window){ window.parent.postMessage(p,'*'); sent=true; } }catch(e){}
+  try{ const ch=new BroadcastChannel('ofs-fit'); ch.postMessage(p); ch.close(); }catch(e){}
+  const blob=new Blob([JSON.stringify(p)],{type:'application/json'}); download(URL.createObjectURL(blob),'ofs-fit-'+Date.now()+'.json');
+  toast(sent?'已即時傳送 OFS ＋下載封包':'已下載 OFS 封包（.json）'); }
 
 /* ===== 車主螢幕（平板） ===== */
 function goDisplay(){ show('display'); setTimeout(()=>$('dispCode').focus(),200); }

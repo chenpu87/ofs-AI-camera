@@ -123,8 +123,9 @@
         <span class="cap-sep"></span>
         <button class="capbtn act" onclick="capturePhoto()">📷 拍照</button>
         <button class="capbtn act" id="recBtn" onclick="toggleRecord()"><span class="recdot" id="recDot"></span><span class="lbl">錄影</span></button>
-        <span class="cap-sep"></span>
         <button class="capbtn" onclick="openCompare()">⇄ 對照</button>
+        <span class="cap-sep"></span>
+        <button class="capbtn" id="ofsRecBtn" style="border-color:#1d9e75;color:#1d9e75" onclick="toggleOfsRecord()"><span class="recdot" id="ofsDot" style="background:#1d9e75"></span><span class="lbl">上傳 OFS</span></button>
       </div>
       <div class="toolbar">
         <div class="tool" id="tAuto" onclick="toggleAuto()"><span class="ic">👤</span>AI追蹤</div>
@@ -150,7 +151,7 @@
         <div class="cmp-col"><span class="cmp-lbl">POST-FIT</span><div class="cmp-slot" id="cmpPost"></div></div>
       </div>
       <div class="cmp-foot"><button class="btn ghost" id="cmpSync" onclick="syncPlay()" style="display:none">▶ 同步播放</button>
-        <button class="btn" style="background:#ff7a1a;color:#fff" onclick="sendToOFS()">📤 傳送到 OFS</button></div>
+        <button class="btn" style="background:#ff7a1a;color:#fff" onclick="sendToOFS()">📤 角度/照片快速帶入 OFS</button></div>
     </div>
   </div>
 </section>
@@ -193,6 +194,8 @@ const BONES=[['shoulder','elbow'],['elbow','wrist'],['shoulder','hip'],['hip','k
 let camVideo,fitCanvas,fitCtx,outStream=null,poseLandmarker=null;
 let aiOn=false, mirrored=false, gridOn=false, frozen=false, freezeImg=null, adjustMode=false;
 let lastLM=null, curSide='right', sideMode='auto', overrides={}, stats={}, captureMode=null, lastAngles=null;
+let compareOpen=false, cmpImg={pre:null,post:null};
+let ofsRec=null, ofsChunks=[], ofsRecording=false;
 
 async function goFitter(){ show('fitter'); camVideo=$('camVideo'); fitCanvas=$('fitCanvas'); fitCtx=fitCanvas.getContext('2d');
   const code=String(Math.floor(1000+Math.random()*9000)); await startCam(); registerPeer(code); renderLoop();
@@ -246,7 +249,8 @@ function renderScene(ctx,P,out,s){ ctx.lineCap='round';
   for(const key in ANGLE_DEFS){ const val=out[key]; if(val==null)continue; const vx=P[ANGLE_DEFS[key].vtx]; pill(ctx,val+'°',vx.x,vx.y-13*s,s); } }
 
 function renderLoop(){ const loop=()=>{ drawComposite(); requestAnimationFrame(loop); }; loop(); }
-function drawComposite(){ const v=camVideo; if(!v||!v.videoWidth)return; const vw=v.videoWidth,vh=v.videoHeight;
+function drawComposite(){ if(compareOpen){ if(fitCanvas.width) drawCompareCanvas(); return; }
+  const v=camVideo; if(!v||!v.videoWidth)return; const vw=v.videoWidth,vh=v.videoHeight;
   if(fitCanvas.width!==vw){ fitCanvas.width=vw; fitCanvas.height=vh; }
   const base=(frozen&&freezeImg)?freezeImg:v;
   if(mirrored){ fitCtx.save();fitCtx.translate(vw,0);fitCtx.scale(-1,1);fitCtx.drawImage(base,0,0,vw,vh);fitCtx.restore(); } else fitCtx.drawImage(base,0,0,vw,vh);
@@ -290,7 +294,7 @@ function bindAdjust(){
 function setOverride(e){ const {nx,ny}=ptToCanvas(e.clientX,e.clientY); overrides[dragKey]={x:nx,y:ny}; }
 
 /* PRE / POST 擷取 */
-const store={ pre:{photo:null,video:null,ext:'webm',angles:null,jpeg:null}, post:{photo:null,video:null,ext:'webm',angles:null,jpeg:null} };
+const store={ pre:{photo:null,video:null,ext:'webm',angles:null,jpeg:null,clean:null}, post:{photo:null,video:null,ext:'webm',angles:null,jpeg:null,clean:null} };
 function setMode(m){ captureMode=(captureMode===m?null:m); $('preBtn').classList.toggle('on',captureMode==='pre'); $('postBtn').classList.toggle('on',captureMode==='post'); }
 function download(url,name){ const a=document.createElement('a'); a.href=url; a.download=name; document.body.appendChild(a); a.click(); a.remove(); }
 function toast(t){ const el=$('toast'); el.textContent=t; el.classList.add('show'); clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),1800); }
@@ -311,9 +315,10 @@ function stopRecord(){ recording=false; if(captureMode&&lastAngles&&!store[captu
 
 /* 對照 */
 let cmpMode='photo';
-function openCompare(){ if(recording)stopRecord(); $('compare').classList.remove('hidden'); cmpTab(cmpMode); }
-function closeCompare(){ $('compare').querySelectorAll('video').forEach(v=>v.pause()); $('compare').classList.add('hidden'); }
-function cmpTab(m){ cmpMode=m; $('cmpPhotoTab').classList.toggle('on',m==='photo'); $('cmpVideoTab').classList.toggle('on',m==='video'); $('cmpSync').style.display=m==='video'?'inline-flex':'none'; renderDiff(); fillSlot('cmpPre','pre'); fillSlot('cmpPost','post'); }
+function openCompare(){ if(recording)stopRecord(); compareOpen=true; loadCmpImg(); $('compare').classList.remove('hidden'); cmpTab(cmpMode); }
+function closeCompare(){ compareOpen=false; $('compare').querySelectorAll('video').forEach(v=>v.pause()); $('compare').classList.add('hidden'); }
+function cmpTab(m){ cmpMode=m; $('cmpPhotoTab').classList.toggle('on',m==='photo'); $('cmpVideoTab').classList.toggle('on',m==='video'); $('cmpSync').style.display=m==='video'?'inline-flex':'none'; renderDiff(); fillSlot('cmpPre','pre'); fillSlot('cmpPost','post'); if(m==='photo')loadCmpImg(); }
+function loadCmpImg(){ ['pre','post'].forEach(k=>{ const u=store[k].photo; if(u){ const im=new Image(); im.src=u; cmpImg[k]=im; } else cmpImg[k]=null; }); }
 function renderDiff(){ const a=store.pre.angles||{}, b=store.post.angles||{}, fmt=v=>(v==null)?'--':v+'°'; let h='';
   ORDER.forEach(k=>{ const pv=a[k],qv=b[k]; let delta='';
     if(pv!=null&&qv!=null){ const d=qv-pv,cls=d>0?'up':d<0?'down':'zero'; delta=`<span class="dc-delta ${cls}">${d>0?'+':''}${d}°</span>`; }
@@ -321,8 +326,32 @@ function renderDiff(){ const a=store.pre.angles||{}, b=store.post.angles||{}, fm
   $('cmpDiff').innerHTML=h; }
 function fillSlot(id,key){ const el=$(id),data=store[key][cmpMode],lbl=key==='pre'?'PRE-FIT':'POST-FIT';
   if(!data){ el.innerHTML='<div class="cmp-empty">尚未擷取</div>'; return; }
-  el.innerHTML=cmpMode==='photo'?`<img src="${data}"><a class="cmp-dl" href="${data}" download="${lbl}.png">下載</a>`:`<video src="${data}" playsinline controls loop></video><a class="cmp-dl" href="${data}" download="${lbl}.${store[key].ext}">下載</a>`; }
+  el.innerHTML=cmpMode==='photo'?`<img src="${data}"><a class="cmp-dl" href="${data}" download="${lbl}.png">下載</a>`:`<video src="${data}" autoplay muted loop playsinline controls></video><a class="cmp-dl" href="${data}" download="${lbl}.${store[key].ext}">下載</a>`; }
 function syncPlay(){ $('compare').querySelectorAll('video').forEach(v=>{ try{ v.currentTime=0; v.play(); }catch(e){} }); }
+
+/* 對照畫面畫進 fitCanvas → 同步投到平板（上下並排） */
+function labelPill(ctx,text,x,y,s){ ctx.font=`700 ${20*s}px "Archivo",sans-serif`; const w=ctx.measureText(text).width+18*s,h=30*s;
+  roundRect(ctx,x,y,w,h,9*s); ctx.fillStyle=BLUE; ctx.fill(); ctx.fillStyle='#fff'; ctx.textAlign='left'; ctx.textBaseline='middle'; ctx.fillText(text,x+9*s,y+h/2); ctx.textBaseline='alphabetic'; }
+function drawCompareHalf(ctx,key,y,h,W,s){
+  const isPhoto=cmpMode==='photo'; const src=isPhoto?cmpImg[key]:$('compare').querySelector('#cmp'+(key==='pre'?'Pre':'Post')+' video');
+  const sw=isPhoto?(src&&src.naturalWidth):(src&&src.videoWidth), sh=isPhoto?(src&&src.naturalHeight):(src&&src.videoHeight);
+  if(src&&sw){ const sc=Math.min(W/sw,h/sh),dw=sw*sc,dh=sh*sc,ox=(W-dw)/2,oy=y+(h-dh)/2; try{ ctx.drawImage(src,ox,oy,dw,dh); }catch(e){} }
+  else { ctx.fillStyle='#555'; ctx.font=`600 ${26*s}px "Archivo",sans-serif`; ctx.textAlign='center'; ctx.fillText('尚未擷取',W/2,y+h/2); ctx.textAlign='left'; }
+  labelPill(ctx, key==='pre'?'PRE-FIT':'POST-FIT', 24*s, y+18*s, s); }
+function drawCompareCanvas(){ const c=fitCanvas,ctx=fitCtx,W=c.width,H=c.height,s=H/720,mid=Math.round(H/2);
+  ctx.fillStyle='#000'; ctx.fillRect(0,0,W,H);
+  drawCompareHalf(ctx,'pre',0,mid,W,s); drawCompareHalf(ctx,'post',mid,H-mid,W,s);
+  ctx.strokeStyle='rgba(47,158,255,.6)'; ctx.lineWidth=2*s; ctx.beginPath(); ctx.moveTo(0,mid); ctx.lineTo(W,mid); ctx.stroke(); }
+
+/* ===== 上傳 OFS：錄「乾淨無標註」影片（原始鏡頭） ===== */
+function toggleOfsRecord(){ if(!captureMode){ toast('請先選 PRE 或 POST'); return; } ofsRecording?stopOfsRecord():startOfsRecord(); }
+function startOfsRecord(){ if(!localStream){ toast('相機尚未啟動'); return; }
+  const mime=pickMime(); try{ ofsRec=new MediaRecorder(localStream,mime?{mimeType:mime}:undefined); }catch(e){ toast('此瀏覽器不支援錄影'); return; }
+  ofsChunks=[]; ofsRec.ondataavailable=e=>{ if(e.data&&e.data.size)ofsChunks.push(e.data); };
+  ofsRec.onstop=()=>{ const type=ofsRec.mimeType||mime||'video/webm'; const blob=new Blob(ofsChunks,{type}),url=URL.createObjectURL(blob),ext=type.includes('mp4')?'mp4':'webm',tag=captureMode==='pre'?'PRE':'POST';
+    store[captureMode].clean=url; download(url,'OFS-'+tag+'-'+Date.now()+'.'+ext); toast('乾淨影片已存（'+tag+'）→ 拖進 OFS 上傳格'); };
+  ofsRecording=true; ofsRec.start(); $('ofsRecBtn').classList.add('on'); $('ofsDot').style.display='inline-block'; $('ofsRecBtn').querySelector('.lbl').textContent='停止 OFS'; }
+function stopOfsRecord(){ ofsRecording=false; try{ ofsRec&&ofsRec.state!=='inactive'&&ofsRec.stop(); }catch(e){} $('ofsRecBtn').classList.remove('on'); $('ofsDot').style.display='none'; $('ofsRecBtn').querySelector('.lbl').textContent='上傳 OFS'; }
 
 /* ===== 傳送到 OFS ===== */
 function buildOfsPayload(){ const a=store.pre.angles||{}, b=store.post.angles||{};

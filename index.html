@@ -41,15 +41,16 @@
   .iconbtn{background:rgba(19,23,28,.7);border:1px solid var(--line);color:var(--ink);border-radius:10px;width:38px;height:38px;font-size:17px;cursor:pointer}
   .freeze-tag{position:absolute;top:60px;right:14px;z-index:31;background:var(--blue);color:#fff;font-weight:700;font-size:11px;letter-spacing:.1em;padding:5px 10px;border-radius:8px;display:none}
 
-  .readout{position:absolute;top:60px;left:12px;z-index:31;background:rgba(10,12,15,.8);backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:14px;padding:10px 12px;min-width:206px;pointer-events:none}
+  .readout{position:absolute;top:48px;left:12px;z-index:31;background:rgba(10,12,15,.7);backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:14px;padding:8px 11px;max-width:64vw;pointer-events:none}
+  #roList{display:grid;grid-template-columns:1fr 1fr;gap:1px 16px}
   .readout.hidden{display:none}
   .ro-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px} #roSide{font-weight:900;font-size:13px;color:var(--blue)}
   .ro-btns button{font-family:inherit;font-weight:700;font-size:11px;border:1px solid var(--line);background:transparent;color:var(--ink);border-radius:8px;padding:4px 8px;margin-left:4px;cursor:pointer;pointer-events:auto}
-  .ro-row{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:3px 0;font-size:13px}
-  .ro-row .nm b{color:var(--ink);font-weight:700} .ro-row .nm i{font-style:normal;color:var(--muted);font-size:11px;margin-left:4px}
-  .ro-row .val{font-family:"JetBrains Mono",monospace;font-weight:700;font-size:16px;color:var(--blue)} .ro-row .ext{font-family:"JetBrains Mono",monospace;font-size:10px;color:var(--muted)}
+  .ro-row{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:2px 0;font-size:12px}
+  .ro-row .nm b{color:var(--ink);font-weight:700}
+  .ro-row .val{font-family:"JetBrains Mono",monospace;font-weight:700;font-size:15px;color:var(--blue)} .ro-row .ext{font-family:"JetBrains Mono",monospace;font-size:9px;color:var(--muted);margin-left:3px}
 
-  .adjust-hint{position:absolute;left:50%;top:52%;transform:translate(-50%,-50%);z-index:32;background:rgba(47,158,255,.92);color:#fff;font-weight:700;font-size:13px;padding:8px 14px;border-radius:12px;display:none;align-items:center;gap:10px}
+  .adjust-hint{position:absolute;top:90px;right:12px;z-index:32;background:rgba(47,158,255,.92);color:#fff;font-weight:700;font-size:12px;padding:7px 12px;border-radius:11px;display:none;align-items:center;gap:8px;max-width:60vw}
   .adjust-hint button{font-family:inherit;font-weight:800;font-size:12px;background:#fff;color:var(--blue);border:none;border-radius:8px;padding:5px 10px;cursor:pointer}
 
   .bottombar{position:absolute;left:0;right:0;bottom:0;z-index:30;display:flex;flex-direction:column;gap:8px;padding:10px;padding-bottom:max(10px,env(safe-area-inset-bottom));background:linear-gradient(transparent,rgba(0,0,0,.82))}
@@ -195,7 +196,7 @@ let camVideo,fitCanvas,fitCtx,outStream=null,poseLandmarker=null;
 let aiOn=false, mirrored=false, gridOn=false, frozen=false, freezeImg=null, adjustMode=false;
 let lastLM=null, curSide='right', sideMode='auto', overrides={}, stats={}, captureMode=null, lastAngles=null;
 let compareOpen=false, cmpImg={pre:null,post:null};
-let ofsRec=null, ofsChunks=[], ofsRecording=false;
+let ofsRec=null, ofsChunks=[], ofsAnnRec=null, ofsAnnChunks=[], ofsRecording=false;
 
 async function goFitter(){ show('fitter'); camVideo=$('camVideo'); fitCanvas=$('fitCanvas'); fitCtx=fitCanvas.getContext('2d');
   const code=String(Math.floor(1000+Math.random()*9000)); await startCam(); registerPeer(code); renderLoop();
@@ -263,7 +264,7 @@ function drawComposite(){ if(compareOpen){ if(fitCanvas.width) drawCompareCanvas
 function updateStats(out){ for(const k in out){ const val=out[k]; if(val==null)continue; if(!stats[k])stats[k]={min:val,max:val};else{stats[k].min=Math.min(stats[k].min,val);stats[k].max=Math.max(stats[k].max,val);} } }
 function renderReadout(out){ $('roSide').textContent=(sideMode==='auto'?'自動 · ':'')+(curSide==='left'?'左側':'右側');
   let h=''; ORDER.forEach(k=>{ const d=ANGLE_DEFS[k],val=out?out[k]:null,st=stats[k];
-    h+=`<div class="ro-row"><span class="nm"><b>${d.label}</b><i>${d.tri}</i></span><span style="text-align:right"><span class="val">${val==null?'--':val+'°'}</span>${st?` <span class="ext">${st.min}–${st.max}</span>`:''}</span></div>`; });
+    h+=`<div class="ro-row"><span class="nm"><b>${d.label}</b></span><span><span class="val">${val==null?'--':val+'°'}</span>${st?`<span class="ext">${st.min}-${st.max}</span>`:''}</span></div>`; });
   $('roList').innerHTML=h; }
 function cycleSide(){ sideMode=sideMode==='auto'?'left':sideMode==='left'?'right':'auto'; resetStats(); }
 function resetStats(){ stats={}; }
@@ -301,7 +302,7 @@ function toast(t){ const el=$('toast'); el.textContent=t; el.classList.add('show
 function flashShutter(){ const s=$('shutter'); s.classList.remove('flash'); void s.offsetWidth; s.classList.add('flash'); }
 function capturePhoto(){ if(!captureMode){ toast('請先選 PRE 或 POST 模式'); return; } if(!fitCanvas.width){ toast('尚未有影像'); return; }
   store[captureMode].jpeg=fitCanvas.toDataURL('image/jpeg',0.85);
-  fitCanvas.toBlob(blob=>{ const url=URL.createObjectURL(blob); store[captureMode].photo=url; store[captureMode].angles=lastAngles?{...lastAngles}:store[captureMode].angles; flashShutter(); download(url,captureMode+'-fit-'+Date.now()+'.png'); toast(bannerText()+' 照片已存'); },'image/png'); }
+  fitCanvas.toBlob(blob=>{ const url=URL.createObjectURL(blob); store[captureMode].photo=url; store[captureMode].angles=lastAngles?{...lastAngles}:store[captureMode].angles; flashShutter(); download(url,'分享用-'+(captureMode==='pre'?'PRE':'POST')+'-'+Date.now()+'.png'); toast(bannerText()+' 照片已存（分享用）'); },'image/png'); }
 let recorder=null,recChunks=[],recording=false;
 function pickMime(){ const c=['video/mp4;codecs=h264','video/mp4','video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm']; for(const m of c){ try{ if(MediaRecorder.isTypeSupported(m))return m; }catch(e){} } return ''; }
 function toggleRecord(){ if(!captureMode){ toast('請先選 PRE 或 POST 模式'); return; } recording?stopRecord():startRecord(); }
@@ -309,7 +310,7 @@ function startRecord(){ let stream; try{ stream=fitCanvas.captureStream(30); }ca
   const mime=pickMime(); try{ recorder=new MediaRecorder(stream,mime?{mimeType:mime}:undefined); }catch(e){ toast('此瀏覽器不支援錄影'); return; }
   recChunks=[]; recorder.ondataavailable=e=>{ if(e.data&&e.data.size)recChunks.push(e.data); };
   recorder.onstop=()=>{ const type=recorder.mimeType||mime||'video/webm'; const blob=new Blob(recChunks,{type}),url=URL.createObjectURL(blob),ext=type.includes('mp4')?'mp4':'webm';
-    store[captureMode].video=url; store[captureMode].ext=ext; download(url,captureMode+'-fit-'+Date.now()+'.'+ext); toast(bannerText()+' 影片已存'); };
+    store[captureMode].video=url; store[captureMode].ext=ext; download(url,'分享用-'+(captureMode==='pre'?'PRE':'POST')+'-'+Date.now()+'.'+ext); toast(bannerText()+' 影片已存（分享用）'); };
   recording=true; recorder.start(); $('recBtn').classList.add('on'); $('recBtn').querySelector('.lbl').textContent='停止'; $('recDot').style.display='inline-block'; }
 function stopRecord(){ recording=false; if(captureMode&&lastAngles&&!store[captureMode].angles) store[captureMode].angles={...lastAngles}; try{ recorder&&recorder.state!=='inactive'&&recorder.stop(); }catch(e){} $('recBtn').classList.remove('on'); $('recBtn').querySelector('.lbl').textContent='錄影'; $('recDot').style.display='none'; }
 
@@ -346,12 +347,22 @@ function drawCompareCanvas(){ const c=fitCanvas,ctx=fitCtx,W=c.width,H=c.height,
 /* ===== 上傳 OFS：錄「乾淨無標註」影片（原始鏡頭） ===== */
 function toggleOfsRecord(){ if(!captureMode){ toast('請先選 PRE 或 POST'); return; } ofsRecording?stopOfsRecord():startOfsRecord(); }
 function startOfsRecord(){ if(!localStream){ toast('相機尚未啟動'); return; }
-  const mime=pickMime(); try{ ofsRec=new MediaRecorder(localStream,mime?{mimeType:mime}:undefined); }catch(e){ toast('此瀏覽器不支援錄影'); return; }
-  ofsChunks=[]; ofsRec.ondataavailable=e=>{ if(e.data&&e.data.size)ofsChunks.push(e.data); };
-  ofsRec.onstop=()=>{ const type=ofsRec.mimeType||mime||'video/webm'; const blob=new Blob(ofsChunks,{type}),url=URL.createObjectURL(blob),ext=type.includes('mp4')?'mp4':'webm',tag=captureMode==='pre'?'PRE':'POST';
-    store[captureMode].clean=url; download(url,'OFS-'+tag+'-'+Date.now()+'.'+ext); toast('乾淨影片已存（'+tag+'）→ 拖進 OFS 上傳格'); };
-  ofsRecording=true; ofsRec.start(); $('ofsRecBtn').classList.add('on'); $('ofsDot').style.display='inline-block'; $('ofsRecBtn').querySelector('.lbl').textContent='停止 OFS'; }
-function stopOfsRecord(){ ofsRecording=false; try{ ofsRec&&ofsRec.state!=='inactive'&&ofsRec.stop(); }catch(e){} $('ofsRecBtn').classList.remove('on'); $('ofsDot').style.display='none'; $('ofsRecBtn').querySelector('.lbl').textContent='上傳 OFS'; }
+  const mime=pickMime(); const tag=captureMode==='pre'?'PRE':'POST'; const mode=captureMode;
+  try{ ofsRec=new MediaRecorder(localStream,mime?{mimeType:mime}:undefined); }catch(e){ toast('此瀏覽器不支援錄影'); return; }
+  let annStream=null; try{ annStream=fitCanvas.captureStream(30); }catch(e){}
+  try{ ofsAnnRec=annStream?new MediaRecorder(annStream,mime?{mimeType:mime}:undefined):null; }catch(e){ ofsAnnRec=null; }
+  ofsChunks=[]; ofsAnnChunks=[];
+  ofsRec.ondataavailable=e=>{ if(e.data&&e.data.size)ofsChunks.push(e.data); };
+  ofsRec.onstop=()=>{ const type=ofsRec.mimeType||mime||'video/webm'; const blob=new Blob(ofsChunks,{type}),url=URL.createObjectURL(blob),ext=type.includes('mp4')?'mp4':'webm';
+    store[mode].clean=url; download(url,'OFS上傳用-'+tag+'-'+Date.now()+'.'+ext); toast('OFS 乾淨影片已存（'+tag+'）→ 拖進 OFS Fitting System'); };
+  if(ofsAnnRec){ ofsAnnRec.ondataavailable=e=>{ if(e.data&&e.data.size)ofsAnnChunks.push(e.data); };
+    ofsAnnRec.onstop=()=>{ const type=ofsAnnRec.mimeType||mime||'video/webm'; const blob=new Blob(ofsAnnChunks,{type}),url=URL.createObjectURL(blob),ext=type.includes('mp4')?'mp4':'webm';
+      store[mode].video=url; store[mode].ext=ext; }; }
+  ofsRecording=true; ofsRec.start(); if(ofsAnnRec)ofsAnnRec.start();
+  $('ofsRecBtn').classList.add('on'); $('ofsDot').style.display='inline-block'; $('ofsRecBtn').querySelector('.lbl').textContent='停止 OFS'; }
+function stopOfsRecord(){ ofsRecording=false; if(captureMode&&lastAngles&&!store[captureMode].angles) store[captureMode].angles={...lastAngles};
+  try{ ofsRec&&ofsRec.state!=='inactive'&&ofsRec.stop(); }catch(e){} try{ ofsAnnRec&&ofsAnnRec.state!=='inactive'&&ofsAnnRec.stop(); }catch(e){}
+  $('ofsRecBtn').classList.remove('on'); $('ofsDot').style.display='none'; $('ofsRecBtn').querySelector('.lbl').textContent='上傳 OFS'; }
 
 /* ===== 傳送到 OFS ===== */
 function buildOfsPayload(){ const a=store.pre.angles||{}, b=store.post.angles||{};

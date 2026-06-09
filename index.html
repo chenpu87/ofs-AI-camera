@@ -87,6 +87,26 @@
   .toast{position:absolute;bottom:150px;left:50%;transform:translateX(-50%);z-index:50;background:rgba(0,0,0,.85);color:#fff;font-weight:700;font-size:13px;padding:10px 16px;border-radius:10px;opacity:0;transition:opacity .2s;pointer-events:none} .toast.show{opacity:1}
   .shutter{position:absolute;inset:0;background:#fff;z-index:55;opacity:0;pointer-events:none} .shutter.flash{animation:sh .25s} @keyframes sh{0%{opacity:.85}100%{opacity:0}}
   .hidden{display:none!important}
+  /* 報告頁 */
+  .report{position:absolute;inset:0;z-index:62;background:#0a0c0f;display:flex;flex-direction:column;padding:14px;padding-top:max(14px,env(safe-area-inset-top))}
+  .report.hidden{display:none}
+  .rep-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+  .rep-head b{font-size:17px}
+  .rep-tier{display:inline-flex;gap:4px} .rep-tier button{font-family:inherit;font-weight:700;font-size:11px;border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:8px;padding:5px 9px;cursor:pointer} .rep-tier button.on{border-color:var(--blue);background:var(--blue);color:#fff}
+  .rep-close{background:transparent;border:none;color:var(--ink);font-size:20px;cursor:pointer;margin-left:8px}
+  .rep-body{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:11px}
+  .rep-row{border:1px solid var(--line);border-radius:12px;padding:11px 13px;background:var(--panel)}
+  .rep-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px}
+  .rep-name{font-weight:800;font-size:15px} .rep-val{font-family:"JetBrains Mono",monospace;font-weight:700;font-size:20px}
+  .rep-val.ok{color:#5fe0a0} .rep-val.over{color:#ffb454} .rep-val.under{color:#ff8a8a} .rep-val.na{color:var(--muted)}
+  .rep-bar{position:relative;height:10px;border-radius:6px;background:#222a32;margin:8px 0 4px}
+  .rep-zone{position:absolute;top:0;bottom:0;background:rgba(95,224,160,.45);border-radius:6px}
+  .rep-mark{position:absolute;top:-3px;width:4px;height:16px;border-radius:2px;background:#fff;transform:translateX(-2px)}
+  .rep-range{font-size:11px;color:var(--muted)}
+  .rep-advice{font-size:13px;color:#cfd6dc;margin-top:7px;line-height:1.5}
+  .rep-advice.locked{filter:blur(4.5px);user-select:none}
+  .rep-lock{margin-top:6px;font-size:12px;font-weight:700;color:var(--blue)}
+  .rep-foot{margin-top:12px;display:flex;justify-content:center}
 </style>
 </head>
 <body>
@@ -125,6 +145,7 @@
         <button class="capbtn act" onclick="capturePhoto()">📷 拍照</button>
         <button class="capbtn act" id="recBtn" onclick="toggleRecord()"><span class="recdot" id="recDot"></span><span class="lbl">錄影</span></button>
         <button class="capbtn" onclick="openCompare()">⇄ 對照</button>
+        <button class="capbtn" onclick="openReport()">📋 報告</button>
         <span class="cap-sep"></span>
         <button class="capbtn" id="ofsRecBtn" style="border-color:#1d9e75;color:#1d9e75" onclick="toggleOfsRecord()"><span class="recdot" id="ofsDot" style="background:#1d9e75"></span><span class="lbl">上傳 OFS</span></button>
       </div>
@@ -153,6 +174,21 @@
       </div>
       <div class="cmp-foot"><button class="btn ghost" id="cmpSync" onclick="syncPlay()" style="display:none">▶ 同步播放</button>
         <button class="btn" style="background:#ff7a1a;color:#fff" onclick="sendToOFS()">📤 角度/照片快速帶入 OFS</button></div>
+    </div>
+
+    <div class="report hidden" id="report">
+      <div class="rep-head"><b>Fitting 報告</b>
+        <div style="display:flex;align-items:center">
+          <div class="rep-tier" id="repTier">
+            <button data-t="trial" onclick="setTier('trial')">試用</button>
+            <button data-t="paid" onclick="setTier('paid')">付費</button>
+            <button data-t="full" class="on" onclick="setTier('full')">完整</button>
+          </div>
+          <button class="rep-close" onclick="closeReport()">✕</button>
+        </div>
+      </div>
+      <div class="rep-body" id="repBody"></div>
+      <div class="rep-foot"><button class="btn" id="repDl" style="background:var(--blue);color:#fff" onclick="downloadReport()">⬇ 下載報告</button></div>
     </div>
   </div>
 </section>
@@ -227,6 +263,7 @@ function updateReadoutVis(){ $('readout').classList.toggle('hidden', !(aiOn && !
 
 function chooseSide(lm){ if(sideMode!=='auto')return sideMode; const sum=s=>['shoulder','hip','knee','ankle'].reduce((a,k)=>a+(lm[SIDES[s][k]]?.visibility||0),0); return sum('left')>=sum('right')?'left':'right'; }
 function angAt(a,b,c){ const v1={x:a.x-b.x,y:a.y-b.y},v2={x:c.x-b.x,y:c.y-b.y}; let d=Math.abs((Math.atan2(v2.y,v2.x)-Math.atan2(v1.y,v1.x))*180/Math.PI); if(d>180)d=360-d; return Math.round(d); }
+function horizonAngle(a,b){ let d=Math.abs(Math.atan2(b.y-a.y,b.x-a.x)*180/Math.PI); if(d>90)d=180-d; return Math.round(d); }
 function computeP(vw,vh){ const idx=SIDES[curSide],P={}; for(const k in idx){ let nx,ny,vv;
     if(frozen && overrides[k]){ nx=overrides[k].x; ny=overrides[k].y; vv=1; } else { const p=lastLM[idx[k]]; nx=p.x; ny=p.y; vv=p.visibility??1; }
     P[k]={x:(mirrored?1-nx:nx)*vw, y:ny*vh, v:vv}; } return P; }
@@ -245,10 +282,10 @@ function drawGrid(ctx,w,h){ ctx.lineWidth=Math.max(1,w/900);ctx.strokeStyle='rgb
   for(let i=1;i<3;i++){ line(ctx,{x:w*i/3,y:0},{x:w*i/3,y:h}); line(ctx,{x:0,y:h*i/3},{x:w,y:h*i/3}); }
   ctx.strokeStyle='rgba(47,158,255,.6)'; line(ctx,{x:w/2,y:0},{x:w/2,y:h}); }
 function renderScene(ctx,P,out,s){ ctx.lineCap='round';
-  BONES.forEach(([a,b])=>{ if(P[a].v<.25||P[b].v<.25)return; ctx.lineWidth=7*s;ctx.strokeStyle='rgba(0,0,0,.45)';line(ctx,P[a],P[b]); ctx.lineWidth=4*s;ctx.strokeStyle=BLUE;line(ctx,P[a],P[b]); });
-  for(const k in P){ const p=P[k]; if(p.v<.25)continue; ctx.beginPath();ctx.arc(p.x,p.y,8*s,0,7);ctx.fillStyle='#0a0c0f';ctx.fill();
-    ctx.lineWidth=3*s;ctx.strokeStyle=BLUE;ctx.stroke(); ctx.beginPath();ctx.arc(p.x,p.y,2.6*s,0,7);ctx.fillStyle='#fff';ctx.fill(); tagTxt(ctx,JN[k],p.x+12*s,p.y+5*s,12*s); }
-  for(const key in ANGLE_DEFS){ const val=out[key]; if(val==null)continue; const vx=P[ANGLE_DEFS[key].vtx]; pill(ctx,val+'°',vx.x,vx.y-13*s,s); } }
+  BONES.forEach(([a,b])=>{ if(P[a].v<.25||P[b].v<.25)return; ctx.lineWidth=4*s;ctx.strokeStyle='rgba(0,0,0,.4)';line(ctx,P[a],P[b]); ctx.lineWidth=2.2*s;ctx.strokeStyle=BLUE;line(ctx,P[a],P[b]); });
+  for(const k in P){ const p=P[k]; if(p.v<.25)continue; ctx.beginPath();ctx.arc(p.x,p.y,5*s,0,7);ctx.fillStyle='#0a0c0f';ctx.fill();
+    ctx.lineWidth=2*s;ctx.strokeStyle=BLUE;ctx.stroke(); ctx.beginPath();ctx.arc(p.x,p.y,1.8*s,0,7);ctx.fillStyle='#fff';ctx.fill(); tagTxt(ctx,JN[k],p.x+10*s,p.y+4*s,11*s); }
+  for(const key in ANGLE_DEFS){ const val=out[key]; if(val==null)continue; const vx=P[ANGLE_DEFS[key].vtx]; pill(ctx,val+'°',vx.x,vx.y-12*s,s); } }
 
 function renderLoop(){ const loop=()=>{ drawComposite(); requestAnimationFrame(loop); }; loop(); }
 function drawComposite(){ if(compareOpen){ if(fitCanvas.width) drawCompareCanvas(); return; }
@@ -259,7 +296,7 @@ function drawComposite(){ if(compareOpen){ if(fitCanvas.width) drawCompareCanvas
   if(aiOn && poseLandmarker && !frozen && v.readyState>=2){ try{ const res=poseLandmarker.detectForVideo(v,performance.now());
     if(res&&res.landmarks&&res.landmarks.length){ lastLM=res.landmarks[0]; curSide=chooseSide(lastLM); } }catch(e){} }
   const s=vh/720; let out=null;
-  if(aiOn && lastLM){ const P=computeP(vw,vh); out=anglesOf(P); renderScene(fitCtx,P,out,s); lastAngles=out; }
+  if(aiOn && lastLM){ const P=computeP(vw,vh); out=anglesOf(P); out.torso=(P.hip.v>=.25&&P.shoulder.v>=.25)?horizonAngle(P.hip,P.shoulder):null; renderScene(fitCtx,P,out,s); lastAngles=out; }
   drawBanner(fitCtx,bannerText(),vw,s); if(gridOn) drawGrid(fitCtx,vw,vh);
   if(out){ if(!frozen) updateStats(out); renderReadout(out); } else if(aiOn) renderReadout(null); }
 function updateStats(out){ for(const k in out){ const val=out[k]; if(val==null)continue; if(!stats[k])stats[k]={min:val,max:val};else{stats[k].min=Math.min(stats[k].min,val);stats[k].max=Math.max(stats[k].max,val);} } }
@@ -330,6 +367,72 @@ function fillSlot(id,key){ const el=$(id),data=store[key][cmpMode],lbl=key==='pr
   if(!data){ el.innerHTML='<div class="cmp-empty">尚未擷取</div>'; return; }
   el.innerHTML=cmpMode==='photo'?`<img src="${data}"><a class="cmp-dl" href="${data}" download="${lbl}.png">下載</a>`:`<video src="${data}" autoplay muted loop playsinline controls></video><a class="cmp-dl" href="${data}" download="${lbl}.${store[key].ext}">下載</a>`; }
 function syncPlay(){ $('compare').querySelectorAll('video').forEach(v=>{ try{ v.currentTime=0; v.play(); }catch(e){} }); }
+
+/* ===== Fitting 報告頁（建議範圍 + 三階閘門） ===== */
+let tier='full', dlCount=0, reportAngles=null, reportShot=null, reportImgEl=null;
+const REPORT_DEFS=[
+  {label:'座高（膝伸展）',src:'kneeExt',low:140,high:148,axisMin:120,axisMax:165,
+    advice:(s)=> s==='over'?'膝角偏大 → 座墊可能太高，建議降低座墊': s==='under'?'膝角偏小 → 座墊可能太低，建議調高座墊':'膝伸展落在建議範圍，座高適中'},
+  {label:'腳跟/腳掌（踝）',src:'ankle',low:90,high:110,axisMin:70,axisMax:130,
+    advice:(s)=> s==='over'?'踝角偏大 → 配合座高一起看，可能需降低座墊': s==='under'?'踝角偏小 → 腳跟下垂，座高可能偏低，建議調高':'踝角適中'},
+  {label:'背部（軀幹對水平）',src:'torso',low:40,high:50,axisMin:25,axisMax:70,
+    advice:(s)=> s==='over'?'上身偏挺 → 把手可降低或拉長': s==='under'?'上身過趴 → 留意柔軟度與舒適度':'背角適中'},
+  {label:'肩膀脖子',src:'back',low:80,high:95,axisMin:60,axisMax:120,
+    advice:(s)=> s==='over'?'肩開過大 → 把手太遠或太低': s==='under'?'肩開過小 → 把手太近':'肩頸角度適中'},
+  {label:'手肘',src:'arm',low:150,high:165,axisMin:130,axisMax:180,
+    advice:(s)=> s==='over'?'手肘偏直 → 把手可能太遠': s==='under'?'手肘過彎 → 把手可能太近':'手肘微彎，適中'},
+  {label:'髖開 Hip',src:'hip',low:90,high:110,axisMin:70,axisMax:130,
+    advice:(s)=> s==='over'?'髖開過大 → 坐墊偏前或把手偏高': s==='under'?'髖開過小 → 坐姿偏趴':'髖開角度適中'},
+];
+function setTier(t){ tier=t; document.querySelectorAll('#repTier button').forEach(b=>b.classList.toggle('on',b.dataset.t===t)); renderReport(); }
+function openReport(){ reportAngles=lastAngles?{...lastAngles}:{}; reportAngles._kneeExt=(stats.knee?stats.knee.max:reportAngles.knee);
+  reportShot=fitCanvas.width?fitCanvas.toDataURL('image/jpeg',0.85):null; if(reportShot){ reportImgEl=new Image(); reportImgEl.src=reportShot; }
+  $('report').classList.remove('hidden'); renderReport(); }
+function closeReport(){ $('report').classList.add('hidden'); }
+function valFor(def){ const a=reportAngles||{}; return def.src==='kneeExt'?a._kneeExt:a[def.src]; }
+function statusOf(def,v){ if(v==null)return 'na'; if(v<def.low)return 'under'; if(v>def.high)return 'over'; return 'ok'; }
+function renderReport(){ const locked=tier==='trial'; let h='';
+  REPORT_DEFS.forEach(def=>{ const v=valFor(def),st=statusOf(def,v);
+    const pct=v==null?0:Math.max(0,Math.min(100,(v-def.axisMin)/(def.axisMax-def.axisMin)*100));
+    const zl=(def.low-def.axisMin)/(def.axisMax-def.axisMin)*100, zw=(def.high-def.low)/(def.axisMax-def.axisMin)*100;
+    const adv=v==null?'尚未偵測到此關節':def.advice(st);
+    h+=`<div class="rep-row"><div class="rep-top"><span class="rep-name">${def.label}</span><span class="rep-val ${st}">${v==null?'--':v+'°'}</span></div>
+      <div class="rep-bar"><div class="rep-zone" style="left:${zl}%;width:${zw}%"></div>${v==null?'':`<div class="rep-mark" style="left:${pct}%"></div>`}</div>
+      <div class="rep-range">建議範圍 ${def.low}–${def.high}°</div>
+      <div class="rep-advice ${locked?'locked':''}">${adv}</div>${locked?'<div class="rep-lock">🔒 升級解鎖完整調整建議</div>':''}</div>`; });
+  $('repBody').innerHTML=h;
+  const dl=$('repDl');
+  if(tier==='trial'){ dl.textContent='🔒 付費後可下載報告'; dl.disabled=true; dl.style.opacity=.55; }
+  else if(tier==='paid'){ const left=Math.max(0,3-dlCount); dl.textContent='⬇ 下載報告（本月剩 '+left+' 次）'; dl.disabled=left<=0; dl.style.opacity=left<=0?.55:1; }
+  else { dl.textContent='⬇ 下載報告'; dl.disabled=false; dl.style.opacity=1; } }
+function downloadReport(){ if(tier==='trial'){ toast('試用版無法下載，請升級'); return; }
+  if(tier==='paid'&&dlCount>=3){ toast('本月下載次數已用完'); return; }
+  const url=buildReportImage(); if(!url){ toast('產生報告失敗'); return; }
+  download(url,'BikeFit報告-'+Date.now()+'.png'); if(tier==='paid'){ dlCount++; renderReport(); } toast('報告已下載'); }
+function buildReportImage(){ try{
+  const W=820,pad=28,rowH=96; let heroH=0; const hero=(reportImgEl&&reportImgEl.complete&&reportImgEl.naturalWidth)?reportImgEl:null;
+  if(hero){ const bw=W-pad*2,sc=Math.min(bw/hero.naturalWidth,360/hero.naturalHeight); heroH=hero.naturalHeight*sc+20; }
+  const H=120+heroH+REPORT_DEFS.length*rowH+50;
+  const c=document.createElement('canvas'); c.width=W; c.height=H; const x=c.getContext('2d');
+  x.fillStyle='#0a0c0f'; x.fillRect(0,0,W,H);
+  x.fillStyle='#fff'; x.font='900 30px Archivo,sans-serif'; x.textBaseline='alphabetic'; x.fillText('BikeFit Fitting 報告',pad,54);
+  x.fillStyle='#7d8a96'; x.font='600 14px Archivo,sans-serif'; x.fillText(new Date().toLocaleString(),pad,80);
+  let y=104;
+  if(hero){ const bw=W-pad*2,sc=Math.min(bw/hero.naturalWidth,360/hero.naturalHeight),dw=hero.naturalWidth*sc,dh=hero.naturalHeight*sc; x.drawImage(hero,(W-dw)/2,y,dw,dh); y+=dh+20; }
+  REPORT_DEFS.forEach(def=>{ const v=valFor(def),st=statusOf(def,v);
+    x.fillStyle='#13171c'; roundRect(x,pad,y,W-pad*2,rowH-14,12); x.fill();
+    x.fillStyle='#fff'; x.font='800 18px Archivo,sans-serif'; x.textAlign='left'; x.fillText(def.label,pad+16,y+30);
+    x.fillStyle=st==='ok'?'#5fe0a0':st==='over'?'#ffb454':st==='under'?'#ff8a8a':'#7d8a96'; x.font='700 23px "JetBrains Mono",monospace'; x.textAlign='right'; x.fillText(v==null?'--':v+'°',W-pad-16,y+30); x.textAlign='left';
+    const bx=pad+16,by=y+44,bw=W-pad*2-32,bh=8;
+    x.fillStyle='#222a32'; roundRect(x,bx,by,bw,bh,4); x.fill();
+    const zl=(def.low-def.axisMin)/(def.axisMax-def.axisMin),zw=(def.high-def.low)/(def.axisMax-def.axisMin);
+    x.fillStyle='rgba(95,224,160,.55)'; roundRect(x,bx+bw*zl,by,bw*zw,bh,4); x.fill();
+    if(v!=null){ const pp=Math.max(0,Math.min(1,(v-def.axisMin)/(def.axisMax-def.axisMin))); x.fillStyle='#fff'; x.fillRect(bx+bw*pp-2,by-4,4,bh+8); }
+    if(tier!=='trial'){ x.fillStyle='#cfd6dc'; x.font='500 14px Archivo,sans-serif'; x.fillText(v==null?'尚未偵測':def.advice(st),pad+16,y+rowH-20); }
+    y+=rowH; });
+  x.fillStyle='#7d8a96'; x.font='500 12px Archivo,sans-serif'; x.fillText('參考值為一般建議，實際以專業 fitting 判斷為準。',pad,y+22);
+  return c.toDataURL('image/png');
+}catch(e){ return null; } }
 
 /* 對照畫面畫進 fitCanvas → 同步投到平板（上下並排） */
 function labelPill(ctx,text,x,y,s){ ctx.font=`700 ${20*s}px "Archivo",sans-serif`; const w=ctx.measureText(text).width+18*s,h=30*s;
